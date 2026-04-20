@@ -41,7 +41,6 @@ category_map = {
     "Code":         [".py", ".js", ".ts", ".html", ".css", ".json", ".xml", ".yaml", ".yml", ".sh", ".bat", ".ps1", ".sql", ".java", ".c", ".cpp", ".h", ".cs", ".go", ".rb", ".php", ".rs"],
     "Shortcuts":    [".lnk", ".url"],
     "3D Models":    [".stl", ".3mf"],
-    "MC Modpacks":  [".mrpack"],
     "Misc.":        [],
 }
 
@@ -226,10 +225,8 @@ def print_summary(log_entries: list[dict], dry_run: bool) -> None:
 # Log Librarian
 def save_log(log_entries: list[dict], target_folder: Path) -> Path:
     """Save a JSON log file to target_folder. Returns the log file path."""
-    log_dir = target_folder / "Logs"
-    log_dir.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_path  = log_dir / f"organizer_log_{timestamp}.json"
+    log_path  = target_folder / f"organizer_log_{timestamp}.json"
  
     payload = {
         "run_at":      datetime.now().isoformat(timespec="seconds"),
@@ -260,7 +257,7 @@ def main() -> None:
         print("  Edit target_folder at the top of this file and try again.")
         input("\n  Press Enter to exit.")
         return
-    
+ 
     old_logs = [f for f in target_folder.iterdir() if is_log_file(f)]
     if old_logs:
         log_dir = target_folder / "Logs"
