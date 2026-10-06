@@ -31,7 +31,7 @@ from datetime import datetime
 target_folder = Path.home() / "Downloads"
 
 category_map = {
-    "Images":       [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", "ico", ".tff", ".tif", ".heic", ".raw"],
+    "Images":       [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".ico", ".ttf", ".tif", ".heic", ".raw"],
     "PDFs":         [".pdf"],
     "Docs":         [".docx", ".doc", ".txt", ".rtf", ".odt", ".xlsx", ".xls", ".ods", ".pptx", ".ppt", ".odp", ".csv", ".md"],
     "Videos":       [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".m4v", ".webm", ".mpeg", ".mpg"],
@@ -44,7 +44,7 @@ category_map = {
     "Misc.":        [],
 }
 
-exception_subfolders = set(category_map.keys()) | {"Misc.", "Logs"}
+exception_subfolders = set(category_map.keys()) | {"Misc.", "Logs", "Folders"}
 
 # Optimizers
 def get_checksum(filepath: Path, chunk_size: int = 65536) -> str:
@@ -117,11 +117,17 @@ def organize(target_folder: Path, dry_run: bool = True) -> list[dict]:
         and item.name != "desktop.ini"   # Windows system file — leave it alone
     ]
  
-    if not files:
-        print("\n  No files found to organise.")
+    folders = [
+        item for item in all_items
+        if item.is_dir()
+        and item.name not in exception_subfolders
+    ]
+
+    if not files and not folders:
+        print("\n  No files or folders found to organise.")
         return []
- 
-    print(f"\n  Scanning {len(files)} file(s) in {target_folder} ...\n")
+
+    print(f"\n  Scanning {len(files)} file(s) and {len(folders)} folder(s) in {target_folder} ...\n")
  
     for filepath in files:
         entry = {
@@ -178,6 +184,40 @@ def organize(target_folder: Path, dry_run: bool = True) -> list[dict]:
         name_display = filepath.name if len(filepath.name) <= 45 else filepath.name[:42] + "..."
         print(f"  {status_icon}  [{category:<12}]  {name_display}")
  
+    for folderpath in folders:
+        entry = {
+            "file":      folderpath.name,
+            "original":  str(folderpath),
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+        }
+
+        dest_folder = target_folder / "Folders"
+        destination = safe_destination(dest_folder / folderpath.name)
+
+        entry["category"]    = "Folders"
+        entry["destination"] = str(destination)
+
+        if dry_run:
+            entry["action"] = "WOULD_MOVE"
+            status_icon     = "→"
+        else:
+            try:
+                dest_folder.mkdir(exist_ok=True)
+                shutil.move(str(folderpath), destination)
+                entry["action"] = "MOVED"
+                status_icon     = "✓"
+            except (PermissionError, OSError) as e:
+                entry["action"] = "ERROR"
+                entry["error"]  = str(e)
+                print(f"  ✗  ERROR  {folderpath.name}: {e}\n")
+                log_entries.append(entry)
+                continue
+
+        log_entries.append(entry)
+
+        name_display = folderpath.name if len(folderpath.name) <= 45 else folderpath.name[:42] + "..."
+        print(f"  {status_icon}  [{'Folders':<12}]  {name_display}")
+    
     return log_entries
 
 # Receipt Printer
