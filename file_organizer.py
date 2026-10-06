@@ -41,10 +41,11 @@ category_map = {
     "Code":         [".py", ".js", ".ts", ".html", ".css", ".json", ".xml", ".yaml", ".yml", ".sh", ".bat", ".ps1", ".sql", ".java", ".c", ".cpp", ".h", ".cs", ".go", ".rb", ".php", ".rs"],
     "Shortcuts":    [".lnk", ".url"],
     "3D Models":    [".stl", ".3mf"],
-    "Misc.":        [],
+    "MRPacks":      [".mrpack"],
+    "Misc":         [],
 }
 
-exception_subfolders = set(category_map.keys()) | {"Misc.", "Logs", "Folders"}
+exception_subfolders = set(category_map.keys()) | {"Misc", "Misc.", "Logs", "Folders"}
 
 # Optimizers
 def get_checksum(filepath: Path, chunk_size: int = 65536) -> str:
@@ -65,7 +66,7 @@ def get_category(extension: str) -> str:
     for category, extensions in category_map.items():
         if ext in extensions:
             return category
-    return "Misc."
+    return "Misc"
 
 def safe_destination(destination: Path) -> Path:
     """
@@ -91,7 +92,7 @@ def is_log_file(filepath: Path) -> bool:
     return filepath.name.startswith("organizer_log_") and filepath.suffix == ".json"
 
 # Organiser
-def organize(target_folder: Path, dry_run: bool = True) -> list[dict]:
+def organize(target_folder: Path, dry_run: bool = True, rescan: bool = False) -> list[dict]:
     """
     Scan target_folder and sort files into category subfolders.
  
@@ -102,6 +103,7 @@ def organize(target_folder: Path, dry_run: bool = True) -> list[dict]:
     """
     log_entries    = []
     seen_checksums = {}   # hash → Path of the first file we saw with that hash
+    unchanged      = 0    # rescan only: files already in the correct folder
  
     # Collect only direct children that are files (not already-sorted subfolders)
     try:
@@ -117,6 +119,26 @@ def organize(target_folder: Path, dry_run: bool = True) -> list[dict]:
         and item.name != "desktop.ini"   # Windows system file — leave it alone
     ]
  
+    # Rescan mode: also pull in files already sitting in the category folders
+    # (plus the old mistaken Folders/Misc) so everything gets re-sorted
+    if rescan:
+        rescan_sources = []
+        candidates = [target_folder / name for name in category_map]
+        candidates += [target_folder / "Misc.", target_folder / "Folders" / "Misc", target_folder / "Folders" / "Misc."]
+        for sub in candidates:
+            if sub.is_dir() and not any(sub.samefile(done) for done in rescan_sources):
+                rescan_sources.append(sub)
+        for sub in rescan_sources:
+            try:
+                files.extend(
+                    item for item in sorted(sub.iterdir())
+                    if item.is_file()
+                    and not is_log_file(item)
+                    and item.name != "desktop.ini"
+                )
+            except PermissionError:
+                print(f"\n  ERROR: Cannot access {sub}. Skipping it.")
+
     folders = [
         item for item in all_items
         if item.is_dir()
@@ -157,6 +179,11 @@ def organize(target_folder: Path, dry_run: bool = True) -> list[dict]:
         dest_folder = target_folder / category
         destination = safe_destination(dest_folder / filepath.name)
  
+        # Rescan: file is already in the right folder, leave it alone
+        if rescan and filepath.parent == dest_folder:
+            unchanged += 1
+            continue
+
         entry["category"]    = category
         entry["destination"] = str(destination)
  
@@ -217,6 +244,17 @@ def organize(target_folder: Path, dry_run: bool = True) -> list[dict]:
 
         name_display = folderpath.name if len(folderpath.name) <= 45 else folderpath.name[:42] + "..."
         print(f"  {status_icon}  [{'Folders':<12}]  {name_display}")
+
+    if rescan:
+        print(f"\n  {unchanged} file(s) already in the correct folder.")
+
+        # Clean up the old mistaken Folders/Misc if it's now empty
+        if not dry_run:
+            for old in (target_folder / "Folders" / "Misc", target_folder / "Folders" / "Misc."):
+                try:
+                    old.rmdir()
+                except OSError:
+                    pass
     
     return log_entries
 
@@ -306,11 +344,16 @@ def main() -> None:
             shutil.move(str(log), log_dir / log.name)
         print(f"  i  Moved {len(old_logs)} existing log(s) into the Logs folder.\n")
  
+    print("  1) Organise new files")
+    print("  2) Re-sort everything (rescan every folder)\n")
+    rescan = input("  Choose [1/2] (default 1): ").strip() == "2"
+    print()
+ 
     # Step 1: Always dry-run first
     print("  STEP 1 OF 2 — DRY RUN (nothing will be moved yet)\n")
     print("  " + "─" * 46)
  
-    dry_run_log = organize(target_folder, dry_run=True)
+    dry_run_log = organize(target_folder, dry_run=True, rescan=rescan)
  
     if not dry_run_log:
         input("\n  Press Enter to exit.")
@@ -331,7 +374,7 @@ def main() -> None:
     print("  STEP 2 OF 2 — MOVING FILES\n")
     print("  " + "─" * 46)
  
-    real_log = organize(target_folder, dry_run=False)
+    real_log = organize(target_folder, dry_run=False, rescan=rescan)
  
     print_summary(real_log, dry_run=False)
  
